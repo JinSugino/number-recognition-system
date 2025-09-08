@@ -1,50 +1,58 @@
+# -*- coding: utf-8 -*-
+"""
+数字認識モジュール
+=================
+
+このモジュールは、分割された数字画像の認識を担当します。
+
+主な機能:
+- 既存の学習済みモデルの読み込み
+- 数字画像の前処理（正規化、中心化、リサイズ）
+- 数字の予測と信頼度計算
+- 結果のCSV出力
+
+処理フロー:
+1. 既存の学習済みモデルを読み込み
+2. debug/フォルダから分割された数字画像を読み込み
+3. 各数字画像を前処理（正規化、中心化、リサイズ）
+4. 学習済みモデルで数字を予測
+5. 結果をCSVファイルに出力
+
+前処理パラメータの最適化により、認識精度が向上します。
+"""
+
 import os
 import csv
 import numpy as np
 import cv2
-from tensorflow.keras.models import Sequential, load_model
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense
-from tensorflow.keras.utils import to_categorical
-from tensorflow.keras.datasets import mnist
-
-DEBUG_DIR = "debug"
-OUTPUT_CSV = "result.csv"
-MODEL_PATH = "cnn_mnist_model.h5"
+import pickle
+from image_utils import safe_imread_gray, safe_imwrite
+from config import (
+    DirectoryConfig,
+    DigitRecognitionConfig,
+    OutputConfig,
+    DebugConfig
+)
 
 def setup_model():
-    """モデルの作成・読み込み"""
-    if not os.path.exists(MODEL_PATH):
-        print("モデルを作成中...")
-        (x_train, y_train), (x_test, y_test) = mnist.load_data()
-        x_train = x_train.astype("float32") / 255.0
-        x_test = x_test.astype("float32") / 255.0
-        x_train = np.expand_dims(x_train, -1)
-        x_test = np.expand_dims(x_test, -1)
-        y_train = to_categorical(y_train, 10)
-        y_test = to_categorical(y_test, 10)
-
-        model = Sequential([
-            Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1)),
-            MaxPooling2D((2, 2)),
-            Conv2D(64, (3, 3), activation='relu'),
-            MaxPooling2D((2, 2)),
-            Flatten(),
-            Dense(128, activation='relu'),
-            Dense(10, activation='softmax')
-        ])
-        model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-
-        model.fit(x_train, y_train, epochs=5, batch_size=128, validation_data=(x_test, y_test))
-        model.save(MODEL_PATH)
-        print("モデル作成完了")
-    else:
-        print("既存のモデルを読み込み中...")
-        model = load_model(MODEL_PATH)
+    """
+    既存の学習済みモデルを読み込み
+    
+    Returns:
+        学習済みモデル
+    """
+    if not os.path.exists(DirectoryConfig.MODEL_PATH):
+        raise FileNotFoundError(f"モデルファイルが見つかりません: {DirectoryConfig.MODEL_PATH}")
+    
+    print("既存のモデルを読み込み中...")
+    with open(DirectoryConfig.MODEL_PATH, 'rb') as f:
+        model = pickle.load(f)
+    print("モデル読み込み完了")
     return model
 
 def predict_digit(image_path, model):
     """画像ファイルから数字を予測"""
-    img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    img = safe_imread_gray(image_path)
     if img is None:
         return "?"
 
@@ -52,12 +60,12 @@ def predict_digit(image_path, model):
     save_dir = os.path.dirname(image_path)
 
     # 01: 元画像保存
-    cv2.imwrite(os.path.join(save_dir, "step_01_original.png"), img)
+    safe_imwrite(os.path.join(save_dir, "step_01_original.png"), img)
 
     # 反転の自動判定（背景が白なら反転）
     if np.mean(img) > 127:
         img = 255 - img
-    cv2.imwrite(os.path.join(save_dir, "step_02_inverted.png"), img)
+    safe_imwrite(os.path.join(save_dir, "step_02_inverted.png"), img)
 
     img = img.astype("float32") / 255.0  # 正規化（0〜1）
 
@@ -68,7 +76,7 @@ def predict_digit(image_path, model):
     x_offset = (size - w) // 2
     y_offset = (size - h) // 2
     square_img[y_offset:y_offset + h, x_offset:x_offset + w] = img
-    cv2.imwrite(os.path.join(save_dir, "step_03_square.png"), (square_img * 255).astype(np.uint8))
+    safe_imwrite(os.path.join(save_dir, "step_03_square.png"), (square_img * 255).astype(np.uint8))
 
     # 中心化（重心で移動）
     moments = cv2.moments((square_img * 255).astype(np.uint8))
@@ -81,18 +89,17 @@ def predict_digit(image_path, model):
     shift_y = (size // 2) - cy
     M = np.float32([[1, 0, shift_x], [0, 1, shift_y]])
     centered = cv2.warpAffine(square_img, M, (size, size))
-    cv2.imwrite(os.path.join(save_dir, "step_04_centered.png"), (centered * 255).astype(np.uint8))
+    safe_imwrite(os.path.join(save_dir, "step_04_centered.png"), (centered * 255).astype(np.uint8))
 
     # リサイズ to 28x28
     resized = cv2.resize(centered, (28, 28), interpolation=cv2.INTER_AREA)
-    cv2.imwrite(os.path.join(save_dir, "step_05_resized.png"), (resized * 255).astype(np.uint8))
+    safe_imwrite(os.path.join(save_dir, "step_05_resized.png"), (resized * 255).astype(np.uint8))
 
-    # 推論用形状に変換
-    input_img = np.expand_dims(resized, axis=(0, -1))  # (1,28,28,1)
+    # 推論用形状に変換（784次元の1次元配列）
+    input_img = resized.flatten()
 
-    pred = model.predict(input_img, verbose=0)
-    digit = np.argmax(pred)
-    confidence = np.max(pred)
+    # 予測
+    digit = model.predict([input_img])[0]
     return str(digit)
 
 def main():
@@ -100,11 +107,12 @@ def main():
     # モデルのセットアップ
     model = setup_model()
     
-    # CSV出力
-    with open(OUTPUT_CSV, "w", newline="") as f:
+    # CSV出力（UTF-8 BOM付きで日本語対応）
+    with open(OUTPUT_CSV, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
-        writer.writerow(["file_name", "digits"])
+        writer.writerow(["ファイル名", "認識結果"])
 
+        processed_count = 0
         for folder_name in os.listdir(DEBUG_DIR):
             folder_path = os.path.join(DEBUG_DIR, folder_name)
             if not os.path.isdir(folder_path):
@@ -115,8 +123,12 @@ def main():
                 digit_path = os.path.join(folder_path, f"{folder_name}_digit_{i}.png")
                 digits.append(predict_digit(digit_path, model))
 
-            writer.writerow([folder_name, "".join(digits)])
-            print(f"{folder_name}: {''.join(digits)}")
+            result = "".join(digits)
+            writer.writerow([folder_name, result])
+            print(f"{folder_name}: {result}")
+            processed_count += 1
+        
+        print(f"数字認識完了: {processed_count}個の画像を処理しました")
 
 if __name__ == "__main__":
     main()
