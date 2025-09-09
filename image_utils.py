@@ -30,6 +30,12 @@ if sys.platform.startswith('win'):
         locale.setlocale(locale.LC_ALL, 'Japanese_Japan.932')
     except:
         pass
+    # デバッグ出力のUTF-8化（文字化け対策）
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
 
 def safe_imread(filepath):
     """日本語ファイル名対応の画像読み込み"""

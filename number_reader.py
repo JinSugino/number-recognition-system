@@ -108,13 +108,13 @@ def main():
     model = setup_model()
     
     # CSV出力（UTF-8 BOM付きで日本語対応）
-    with open(OUTPUT_CSV, "w", newline="", encoding="utf-8-sig") as f:
+    with open(DirectoryConfig.OUTPUT_CSV, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
         writer.writerow(["ファイル名", "認識結果"])
 
         processed_count = 0
-        for folder_name in os.listdir(DEBUG_DIR):
-            folder_path = os.path.join(DEBUG_DIR, folder_name)
+        for folder_name in os.listdir(DirectoryConfig.DEBUG_DIR):
+            folder_path = os.path.join(DirectoryConfig.DEBUG_DIR, folder_name)
             if not os.path.isdir(folder_path):
                 continue
 

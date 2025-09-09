@@ -12,6 +12,12 @@ if sys.platform.startswith('win'):
         locale.setlocale(locale.LC_ALL, 'Japanese_Japan.932')
     except:
         pass
+    # コンソール出力のUTF-8化（PowerShell/Terminalでの文字化け対策）
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
 
 from image_processor import process_images
 import preprocessing
