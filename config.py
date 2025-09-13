@@ -24,15 +24,15 @@ class ImageProcessingConfig:
     """画像前処理のパラメータ設定"""
     
     # 枠削り設定
-    CROP_RATIO = 0.03           # 画像の四辺から切り落とす比率（0.02=各辺2%を削る）
+    CROP_RATIO = 0.00           # 画像の四辺から切り落とす比率（0.02=各辺2%を削る）
     
     # ノイズ除去設定
-    MEDIAN_BLUR_KERNEL = 5        # 中央値フィルタのカーネルサイズ（大きいほど平滑化が強い）
+    MEDIAN_BLUR_KERNEL = 1        # 中央値フィルタのカーネルサイズ（大きいほど平滑化が強い）
     GAUSSIAN_BLUR_KERNEL = (5, 5) # ガウシアン平滑化のカーネル（奇数×奇数で指定）
     
     # 適応的二値化設定
-    ADAPTIVE_BLOCK_SIZE_RATIO = 15 # 適応的二値化の近傍ウィンドウサイズを画像サイズから決める比率
-    ADAPTIVE_C = 3                # 適応的二値化の閾値補正（大きいほど黒寄り、輪郭強調）
+    ADAPTIVE_BLOCK_SIZE_RATIO = 2 # 適応的二値化の近傍ウィンドウサイズを画像サイズから決める比率
+    ADAPTIVE_C = 1                # 適応的二値化の閾値補正（大きいほど黒寄り、輪郭強調）
     
     # 画像サイズ設定
     TARGET_DIGIT_SIZE = 28        # 最終的に推論へ渡す数字画像の一辺サイズ（MNIST互換）(固定値)
@@ -50,7 +50,13 @@ class DigitSegmentationConfig:
     # 適応的分割のパラメータ（SEGMENTATION_METHOD = "adaptive"の場合）
     MIN_DIGIT_WIDTH = 40          # 1桁領域として許容する最小幅（小さすぎる誤検出を抑制）
     MAX_DIGIT_WIDTH = 100         # 1桁領域として許容する最大幅（広すぎる結合を抑制）
-    WHITE_SPACE_THRESHOLD = 0.6  # 列方向の白画素率がこの値以下なら区切りとみなす（0〜1）
+    WHITE_SPACE_THRESHOLD = 0.5  # 列方向の白画素率がこの値以下なら区切りとみなす（0〜1）
+
+    DENSITY_THRESHOLD = 0.03   # 文字列と判断する縦密度の閾値（0～1）
+    MIN_WIDTH = 5 
+    
+    PROJECTION_THRESHOLD1 = 3 #画像分割で用いる垂直投影プロファイルの閾値（0~60）
+    PROJECTION_THRESHOLD2 = 20 #数字らしい特徴として明確な濃度ピークが存在するかを判定する閾値（0~60）
 
 # =============================================================================
 # モデル設定

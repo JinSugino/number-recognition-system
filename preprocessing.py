@@ -71,40 +71,150 @@ def binarize(image_path):
 
 def segment_digits(binary_img, base_name):
     """
-    二値化画像を8個の数字領域に分割
-    
-    処理内容:
-    1. 画像を8等分に分割
-    2. 各領域を28x28にリサイズ
-    3. デバッグフォルダに保存
-    
+    二値化画像を垂直投影プロファイルで数字領域に分割（2段階閾値判定）
+    + MNISTモデルにフィットする正規化処理（合同拡大 + 重心正規化）
+
     Args:
-        binary_img: 二値化された画像
+        binary_img: 二値化された画像 (numpy.ndarray)
         base_name: ベースファイル名
-    
+
     Returns:
-        分割された数字画像のリスト
+        digits: 分割された数字画像のリスト（MNIST互換28x28）
     """
+    import matplotlib.pyplot as plt
+
     h, w = binary_img.shape
-    slice_width = w // DigitSegmentationConfig.EXPECTED_DIGITS
     debug_subdir = os.path.join(DirectoryConfig.DEBUG_DIR, base_name)
     os.makedirs(debug_subdir, exist_ok=True)
 
+    # --- 1. 垂直投影プロファイル算出 ---
+    proj = np.sum(binary_img == 255, axis=0)  # 白画素の数をカウント
+
+    threshold1 = DigitSegmentationConfig.PROJECTION_THRESHOLD1
+    threshold2 = DigitSegmentationConfig.PROJECTION_THRESHOLD2
+    min_width = DigitSegmentationConfig.MIN_WIDTH
+
+    # --- 2. プロファイル可視化 ---
+    plt.figure(figsize=(10, 4))
+    plt.plot(proj, label="Vertical Projection")
+    plt.axhline(y=threshold1, color="red", linestyle="--", label="Threshold1")
+    plt.axhline(y=threshold2, color="blue", linestyle="--", label="Threshold2")
+    plt.title(f"Projection Profile: {base_name}")
+    plt.xlabel("X-axis (columns)")
+    plt.ylabel("White Pixel Count")
+    plt.legend()
+    profile_path = os.path.join(debug_subdir, f"{base_name}_projection.png")
+    plt.savefig(profile_path)
+    plt.close()
+
+    # --- 3. 区間抽出 & 正規化 ---
     digits = []
-    for i in range(DigitSegmentationConfig.EXPECTED_DIGITS):
-        x_start = i * slice_width
-        x_end = w if i == DigitSegmentationConfig.EXPECTED_DIGITS - 1 else (i + 1) * slice_width
-        digit = binary_img[:, x_start:x_end]
-        digit_resized = cv2.resize(digit, (ImageProcessingConfig.TARGET_DIGIT_SIZE, ImageProcessingConfig.TARGET_DIGIT_SIZE))
-        save_path = os.path.join(debug_subdir, f"{base_name}_digit_{i}.png")
-        if safe_imwrite(save_path, digit_resized):
-            digits.append(digit_resized)
-        else:
-            print(f"⚠️ 数字画像保存失敗: {save_path}")
+    in_region = False
+    x_start = 0
+    peak_in_region = False
+
+    for x in range(w):
+        if not in_region and proj[x] > threshold1:
+            in_region = True
+            x_start = x
+            peak_in_region = proj[x] > threshold2
+        elif in_region:
+            if proj[x] > threshold2:
+                peak_in_region = True
+            if proj[x] <= threshold1:
+                in_region = False
+                x_end = x
+                width = x_end - x_start
+                if width < min_width or not peak_in_region:
+                    continue
+
+                digit = binary_img[:, x_start:x_end]
+                if digit.shape[1] > 0:
+                    # ① 正方形パディング
+                    digit_square = pad_to_square(digit)
+                    # ② 合同拡大正規化
+                    digit_normalized = scale_to_max_size(digit_square, ImageProcessingConfig.TARGET_DIGIT_SIZE)
+                    # ③ 重心正規化
+                    digit_centered = center_of_mass_normalization(digit_normalized)
+                    # ④ MNISTサイズにリサイズ
+                    digit_resized = cv2.resize(
+                        digit_centered,
+                        (ImageProcessingConfig.TARGET_DIGIT_SIZE, ImageProcessingConfig.TARGET_DIGIT_SIZE)
+                    )
+                    # デバッグ保存
+                    save_path = os.path.join(debug_subdir, f"{base_name}_digit_{len(digits)}.png")
+                    if safe_imwrite(save_path, digit_resized):
+                        digits.append(digit_resized)
+                    else:
+                        print(f"⚠️ 数字画像保存失敗: {save_path}")
+
+    # 最後まで閾値1を超えていた場合
+    if in_region:
+        x_end = w
+        width = x_end - x_start
+        if width >= min_width and peak_in_region:
+            digit = binary_img[:, x_start:x_end]
+            if digit.shape[1] > 0:
+                digit_square = pad_to_square(digit)
+                digit_normalized = scale_to_max_size(digit_square, ImageProcessingConfig.TARGET_DIGIT_SIZE)
+                digit_centered = center_of_mass_normalization(digit_normalized)
+                digit_resized = cv2.resize(
+                    digit_centered,
+                    (ImageProcessingConfig.TARGET_DIGIT_SIZE, ImageProcessingConfig.TARGET_DIGIT_SIZE)
+                )
+                save_path = os.path.join(debug_subdir, f"{base_name}_digit_{len(digits)}.png")
+                if safe_imwrite(save_path, digit_resized):
+                    digits.append(digit_resized)
+                else:
+                    print(f"⚠️ 数字画像保存失敗: {save_path}")
 
     if DebugConfig.VERBOSE_LOGGING:
-        print(f"{base_name}: {DigitSegmentationConfig.EXPECTED_DIGITS}個に分割して保存完了")
+        print(f"{base_name}: {len(digits)}個の数字領域を抽出して保存完了")
+
     return digits
+
+
+def scale_to_max_size(img, target_size):
+    """
+    画像を最大辺に合わせて合同拡大（縦横比維持）
+    """
+    h, w = img.shape
+    scale = target_size / max(h, w)
+    new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
+    return cv2.resize(img, new_size, interpolation=cv2.INTER_AREA)
+
+
+def center_of_mass_normalization(img):
+    """
+    重心を画像中心に移動する（MNISTの重心正規化）
+    """
+    import numpy as np
+    from scipy.ndimage import center_of_mass
+
+    cy, cx = center_of_mass(img)
+    h, w = img.shape
+    shift_x = int(w / 2 - cx)
+    shift_y = int(h / 2 - cy)
+    M = np.float32([[1, 0, shift_x], [0, 1, shift_y]])
+    img_shifted = cv2.warpAffine(img, M, (w, h), borderValue=0)
+    return img_shifted
+
+
+def pad_to_square(img):
+    """
+    入力画像を上下左右にパディングして正方形にする。
+    """
+    h, w = img.shape
+    size = max(h, w)
+    pad_top = (size - h) // 2
+    pad_bottom = size - h - pad_top
+    pad_left = (size - w) // 2
+    pad_right = size - w - pad_left
+    return cv2.copyMakeBorder(img, pad_top, pad_bottom, pad_left, pad_right,
+                              cv2.BORDER_CONSTANT, value=0)  # 黒で埋める
+
+
+
 
 def main():
     """
