@@ -143,18 +143,13 @@ class DigitDataset(Dataset):
         return (resized * 255).astype(np.uint8)
 
 class DataAugmentation:
-    """データ拡張クラス"""
+    """データ拡張クラス（段階的多数決対応）"""
     
     def __init__(self):
-        self.transform = transforms.Compose([
-            transforms.RandomRotation(degrees=15),  # ±15度の回転
-            transforms.RandomAffine(degrees=0, scale=(0.8, 1.2)),  # スケール変更
-            transforms.ToTensor(),
-            transforms.Normalize((0.5,), (0.5,))  # 正規化
-        ])
+        pass
     
-    def augment_image(self, image_path):
-        """1枚の画像から3枚の拡張画像を生成"""
+    def augment_image_basic(self, image_path):
+        """基本3枚の拡張画像を生成（第1段階用）"""
         augmented_images = []
         
         # 元画像を読み込み
@@ -166,10 +161,103 @@ class DataAugmentation:
         img = self.preprocess_image(img)
         img_pil = Image.fromarray(img)
         
-        # 3回の拡張を適用
-        for _ in range(3):
-            augmented = self.transform(img_pil)
-            augmented_images.append(augmented)
+        # 1. 元画像（拡張なし）
+        base_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,))
+        ])
+        augmented_images.append(base_transform(img_pil))
+        
+        # 2. 軽微回転（±5度）
+        seed = (abs(hash(image_path)) + 1) % (2**32)
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
+        
+        rotation_transform = transforms.Compose([
+            transforms.RandomRotation(degrees=5),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,))
+        ])
+        augmented_images.append(rotation_transform(img_pil))
+        
+        # 3. 軽微スケール（0.9-1.1）
+        seed = (abs(hash(image_path)) + 2) % (2**32)
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
+        
+        scale_transform = transforms.Compose([
+            transforms.RandomAffine(degrees=0, scale=(0.9, 1.1)),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,))
+        ])
+        augmented_images.append(scale_transform(img_pil))
+        
+        return augmented_images
+    
+    def augment_image_full(self, image_path):
+        """全組み合わせの拡張画像を生成（第2段階用）"""
+        augmented_images = []
+        
+        # 元画像を読み込み
+        img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            return [np.zeros((28, 28), dtype=np.uint8) for _ in range(27)]
+        
+        # 前処理
+        img = self.preprocess_image(img)
+        img_pil = Image.fromarray(img)
+        
+        # 角度調整: ±5度、±10度、±15度
+        angles = [5, 10, 15]
+        # 収縮膨張: 収縮、膨張、通常
+        morph_ops = ['erode', 'dilate', 'normal']
+        # 拡大縮小: 0.8-0.9、1.1-1.2、通常
+        scales = [(0.8, 0.9), (1.1, 1.2), (1.0, 1.0)]
+        
+        # 全組み合わせ: 3×3×3 = 27枚
+        for i, angle in enumerate(angles):
+            for j, morph_op in enumerate(morph_ops):
+                for k, scale in enumerate(scales):
+                    seed = (abs(hash(image_path)) + i * 100 + j * 10 + k) % (2**32)
+                    torch.manual_seed(seed)
+                    np.random.seed(seed)
+                    random.seed(seed)
+                    
+                    # モルフォロジー操作
+                    if morph_op == 'erode':
+                        # 収縮（文字を細く）
+                        kernel = np.ones((2, 2), np.uint8)
+                        img_morph = cv2.erode(img, kernel, iterations=1)
+                    elif morph_op == 'dilate':
+                        # 膨張（文字を太く）
+                        kernel = np.ones((2, 2), np.uint8)
+                        img_morph = cv2.dilate(img, kernel, iterations=1)
+                    else:
+                        # 通常
+                        img_morph = img
+                    
+                    img_morph_pil = Image.fromarray(img_morph)
+                    
+                    # 回転とスケールの組み合わせ
+                    if scale == (1.0, 1.0):
+                        # 通常スケール
+                        transform = transforms.Compose([
+                            transforms.RandomRotation(degrees=angle),
+                            transforms.ToTensor(),
+                            transforms.Normalize((0.5,), (0.5,))
+                        ])
+                    else:
+                        # スケール変更
+                        transform = transforms.Compose([
+                            transforms.RandomRotation(degrees=angle),
+                            transforms.RandomAffine(degrees=0, scale=scale),
+                            transforms.ToTensor(),
+                            transforms.Normalize((0.5,), (0.5,))
+                        ])
+                    
+                    augmented_images.append(transform(img_morph_pil))
         
         return augmented_images
     
@@ -204,24 +292,55 @@ class DataAugmentation:
         return (resized * 255).astype(np.uint8)
 
 class MajorityVoting:
-    """多数決による最終判定"""
+    """段階的多数決による最終判定"""
     
     def __init__(self, model, device):
         self.model = model
         self.device = device
         self.augmentation = DataAugmentation()
+        self.confidence_threshold = 0.85  # 信頼度閾値
     
     def predict_with_voting(self, image_path):
-        """多数決による予測"""
-        # 3枚の拡張画像を生成
-        augmented_images = self.augmentation.augment_image(image_path)
+        """段階的多数決による予測"""
+        # ファイル名ベースのシードで固定
+        seed = abs(hash(image_path)) % (2**32)
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
         
+        # 第1段階: 基本3枚で判定
+        basic_images = self.augmentation.augment_image_basic(image_path)
+        basic_predictions, basic_confidences = self._predict_batch(basic_images)
+        
+        # 基本信頼度を計算
+        basic_confidence = np.mean(basic_confidences)
+        
+        # 信頼度が閾値以上なら基本結果を返す
+        if basic_confidence >= self.confidence_threshold:
+            prediction_counts = Counter(basic_predictions)
+            most_common = prediction_counts.most_common(1)[0]
+            return most_common[0], basic_confidence, basic_predictions, basic_confidences
+        
+        # 第2段階: 全組み合わせで高精度判定
+        print(f"信頼度が低いため全組み合わせで再判定: {basic_confidence:.3f}")
+        full_images = self.augmentation.augment_image_full(image_path)
+        full_predictions, full_confidences = self._predict_batch(full_images)
+        
+        # 全組み合わせの結果
+        prediction_counts = Counter(full_predictions)
+        most_common = prediction_counts.most_common(1)[0]
+        avg_confidence = np.mean(full_confidences)
+        
+        return most_common[0], avg_confidence, full_predictions, full_confidences
+    
+    def _predict_batch(self, images):
+        """画像バッチの予測を実行"""
         predictions = []
         confidences = []
         
         self.model.eval()
         with torch.no_grad():
-            for img_tensor in augmented_images:
+            for img_tensor in images:
                 img_tensor = img_tensor.unsqueeze(0).to(self.device)
                 outputs = self.model(img_tensor)
                 probabilities = F.softmax(outputs, dim=1)
@@ -230,14 +349,7 @@ class MajorityVoting:
                 predictions.append(predicted.item())
                 confidences.append(confidence.item())
         
-        # 多数決
-        prediction_counts = Counter(predictions)
-        most_common = prediction_counts.most_common(1)[0]
-        
-        # 信頼度は平均を取る
-        avg_confidence = np.mean(confidences)
-        
-        return most_common[0], avg_confidence, predictions, confidences
+        return predictions, confidences
 
 class PyTorchDigitRecognizer:
     """PyTorchベースの数字認識器"""
