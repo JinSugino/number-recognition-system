@@ -1,6 +1,6 @@
 # 数字認識システム
 
-このプロジェクトは、画像から8桁の数字を自動認識するシステムです。scikit-learnのRandom ForestモデルとPyTorchのCNNモデルの両方をサポートし、多数決方式による精度向上を実装しています。
+このプロジェクトは、画像から8桁の数字を自動認識するシステムです。PyTorchのCNNモデルを使用し、データ拡張による多数決方式で高精度な数字認識を実現しています。
 
 ## 機能
 
@@ -9,7 +9,7 @@
 * 8桁の数字の自動分割
 * **PyTorch CNNモデルによる高精度数字認識**
 * **データ拡張（角度・スケール変更）による多数決方式**
-* **scikit-learnモデルとの比較機能**
+* **信頼度表示機能**
 * 結果のCSV出力（日本語対応）
 
 ## セットアップ
@@ -18,12 +18,10 @@
 
 * Python 3.8以上
 * OpenCV
-* scikit-learn
 * NumPy
 * **PyTorch (2.0以上)**
 * **torchvision**
 * **Pillow**
-* **matplotlib**
 
 ### インストール
 
@@ -59,35 +57,24 @@ pip install -r requirements.txt
 * 推奨: 8桁の数字が横一列に並んでいる画像
 * 日本語ファイル名対応
 
-### 2. 実行方法
-
-#### 従来のscikit-learnモデルを使用する場合
+### 2. 実行
 
 ```bash
 python main.py
 ```
 
-#### 新しいPyTorchモデルを使用する場合（推奨）
-
-```bash
-# 1. PyTorchモデルの訓練（初回のみ）
-python train_pytorch_model.py
-
-# 2. PyTorchモデルで数字認識
-python main_pytorch.py
-```
-
 ### 3. 結果の確認
 
-処理が完了すると、以下のファイル・フォルダが生成されます：
+処理が完了すると、以下のファイルが生成されます：
 
-* `data/`: 前処理済み画像
-* `debug/`: 各ステップのデバッグ画像
-* `result.csv`: scikit-learnモデルの認識結果
 * `result_pytorch.csv`: **PyTorchモデルの認識結果（信頼度付き）**
-* `model_comparison.csv`: **両モデルの比較結果**
-* `pytorch_digit_model.pth`: **PyTorch学習済みモデル**
-* `sklearn_mnist_model.pkl`: scikit-learn学習済みモデル
+* `model_comparison_detailed.csv`: **詳細な比較結果**
+
+### 4. 精度確認
+
+```bash
+python check_result.py compare
+```
 
 ## 処理フロー
 
@@ -106,15 +93,6 @@ python main_pytorch.py
 
 ## 出力形式
 
-### scikit-learnモデルの結果 (`result.csv`)
-
-```
-ファイル名,認識結果
-image1,12345678
-image2,87654321
-...
-```
-
 ### PyTorchモデルの結果 (`result_pytorch.csv`)
 
 ```
@@ -124,44 +102,40 @@ image2,87654321,0.8756,"[8,8,8]|[7,7,7]|[6,6,6]|[5,5,5]|[4,4,4]|[3,3,3]|[2,2,2]|
 ...
 ```
 
-### モデル比較結果 (`model_comparison.csv`)
+### 詳細比較結果 (`model_comparison_detailed.csv`)
 
 ```
-ファイル名,PyTorch結果,scikit-learn結果,一致
-image1,12345678,12345678,True
-image2,87654321,87654320,False
+filename,accurate,pytorch_result,pytorch_matches
+image1,12345678,12345678,8
+image2,87654321,87654320,7
 ...
+pytorch_accuracy,0.915
 ```
 
 ## ファイル構成
 
 ```
 number-recognition-system/
-├── main.py                    # メインハブ（scikit-learn版）
-├── main_pytorch.py           # メインハブ（PyTorch版）
-├── config.py                  # 設定ファイル（パラメータ管理）
+├── main.py                    # メイン実行ファイル
+├── number_reader.py           # PyTorch数字認識モジュール
+├── pytorch_model.py           # PyTorch CNNモデル定義
 ├── image_processor.py         # 画像前処理（枠削り）
 ├── preprocessing.py           # 画像の二値化と分割処理
-├── number_reader.py           # 数字認識とCSV出力処理（scikit-learn版）
-├── pytorch_number_reader.py   # 数字認識とCSV出力処理（PyTorch版）
-├── pytorch_model.py           # PyTorch CNNモデル定義
-├── train_pytorch_model.py     # PyTorchモデル訓練スクリプト
 ├── image_utils.py             # 画像処理ユーティリティ
+├── config.py                  # 設定ファイル（パラメータ管理）
+├── check_result.py            # 精度確認スクリプト
+├── pytorch_digit_model.pth    # 学習済みPyTorchモデル
 ├── requirements.txt           # 依存関係
 ├── README.md                 # このファイル
-├── input/                    # 入力画像フォルダ
-├── data/                     # 前処理済み画像
-├── debug/                    # デバッグ画像
-├── result.csv                # scikit-learn認識結果
-├── result_pytorch.csv        # PyTorch認識結果
-├── model_comparison.csv      # モデル比較結果
-├── sklearn_mnist_model.pkl   # scikit-learn学習済みモデル
-└── pytorch_digit_model.pth   # PyTorch学習済みモデル
+├── input/                    # 入力画像フォルダ（50枚）
+├── result_accurate.csv        # 正解データ
+├── result_pytorch.csv         # PyTorch認識結果
+└── model_comparison_detailed.csv # 詳細比較結果
 ```
 
 ## モジュール構成
 
-### main.py / main_pytorch.py
+### main.py
 * 全体の処理フローを制御するハブ機能
 * 各モジュールの順次実行
 
@@ -172,24 +146,21 @@ number-recognition-system/
 ### preprocessing.py
 * 画像の二値化処理
 * 8桁の数字分割
-* デバッグ画像の保存
 
-### number_reader.py / pytorch_number_reader.py
-* 学習済みモデルの読み込み
-* 数字認識処理
+### number_reader.py
+* PyTorch学習済みモデルの読み込み
+* 数字認識処理（多数決方式）
+* 信頼度計算
 * CSV結果出力（日本語対応）
-* **PyTorch版では多数決方式と信頼度計算を実装**
 
 ### pytorch_model.py
 * **PyTorch CNNモデルの定義**
 * **データ拡張機能**
 * **多数決による最終判定**
-* **MNISTデータセットでの訓練機能**
 
-### train_pytorch_model.py
-* **PyTorchモデルの訓練スクリプト**
-* **学習曲線の可視化**
-* **モデル評価機能**
+### check_result.py
+* **精度確認スクリプト**
+* **詳細比較機能**
 
 ### image_utils.py
 * 画像読み込み・保存のユーティリティ
@@ -207,49 +178,36 @@ python image_processor.py
 # 画像の二値化と分割のみ
 python preprocessing.py
 
-# scikit-learn数字認識のみ
+# PyTorch数字認識のみ
 python number_reader.py
 
-# PyTorch数字認識のみ
-python pytorch_number_reader.py
-
-# PyTorchモデル訓練のみ
-python train_pytorch_model.py
+# 精度確認のみ
+python check_result.py compare
 ```
 
-## パフォーマンス最適化
+## パフォーマンス
 
-### 前処理パラメータの調整
+### 認識精度
 
-OCR精度向上のため、`config.py`ファイルで以下のパラメータを調整できます：
+* **PyTorchモデル**: 91.5%（50枚のテストデータで検証）
+* **多数決方式**: データ拡張による精度向上
+* **信頼度表示**: 各予測の信頼度を数値で確認可能
 
-- **画像前処理**: 枠削り比率、ノイズ除去強度
-- **二値化**: 適応的ブロックサイズ、閾値定数
-- **認識**: 信頼度閾値、画像正規化設定
+### 処理速度
 
-### 推奨設定
-
-高精度を目指す場合の推奨パラメータ：
-
-```python
-# 高精度設定
-CROP_RATIO = 0.03
-MEDIAN_BLUR_KERNEL = 5
-ADAPTIVE_BLOCK_SIZE_RATIO = 15
-ADAPTIVE_C = 3
-MIN_CONFIDENCE = 0.5
-```
+* **GPU最適化**: Apple Silicon MPS対応
+* **軽量化モデル**: 効率的なCNNアーキテクチャ
+* **バッチ処理**: 高速な画像処理
 
 ## 特徴
 
 * **日本語ファイル名対応**: 日本語のファイル名でも正常に処理
-* **高精度**: PyTorch CNNモデルによる高精度な数字認識
+* **高精度**: PyTorch CNNモデルによる91.5%の高精度な数字認識
 * **多数決方式**: データ拡張による3枚の画像から多数決で最終判定
-* **信頼度表示**: 各予測の信頼度を表示
-* **モデル比較**: scikit-learnとPyTorchモデルの性能比較
+* **信頼度表示**: 各予測の信頼度を数値で表示
+* **GPU最適化**: Apple Silicon MPS対応による高速処理
 * **モジュラー設計**: 各機能が独立したモジュールとして分離
 * **エラー耐性**: ファイル読み込みエラーに対する代替処理
-* **パラメータ調整**: 前処理パラメータの簡単な調整
 * **詳細コメント**: 各モジュールの役割と処理内容を明確化
 
 ## PyTorchモデルの利点
@@ -258,5 +216,5 @@ MIN_CONFIDENCE = 0.5
 * **データ拡張**: 角度・スケール変更による汎化性能向上
 * **多数決方式**: 3枚の拡張画像から多数決で最終判定
 * **信頼度計算**: 各予測の信頼度を数値で表示
-* **GPU対応**: CUDA対応GPUがあれば高速処理
-* **学習曲線**: 訓練過程の可視化
+* **GPU対応**: Apple Silicon MPSによる高速処理
+* **軽量化**: 効率的なモデルアーキテクチャ

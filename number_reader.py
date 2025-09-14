@@ -1,31 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-数字認識モジュール
-=================
+PyTorch数字認識モジュール
+======================
 
-このモジュールは、分割された数字画像の認識を担当します。
-
-主な機能:
-- 既存の学習済みモデルの読み込み
-- 数字画像の前処理（正規化、中心化、リサイズ）
-- 数字の予測と信頼度計算
-- 結果のCSV出力
-
-処理フロー:
-1. 既存の学習済みモデルを読み込み
-2. debug/フォルダから分割された数字画像を読み込み
-3. 各数字画像を前処理（正規化、中心化、リサイズ）
-4. 学習済みモデルで数字を予測
-5. 結果をCSVファイルに出力
-
-前処理パラメータの最適化により、認識精度が向上します。
+PyTorchベースのCNNモデルを使用した数字認識システム
+多数決方式による精度向上を実装
 """
 
 import os
 import csv
 import numpy as np
 import cv2
-import pickle
 from image_utils import safe_imread_gray, safe_imwrite
 from config import (
     DirectoryConfig,
@@ -33,102 +18,122 @@ from config import (
     OutputConfig,
     DebugConfig
 )
+from pytorch_model import PyTorchDigitRecognizer
 
-def setup_model():
+def setup_pytorch_model():
     """
-    既存の学習済みモデルを読み込み
+    PyTorch学習済みモデルを読み込み
     
     Returns:
-        学習済みモデル
+        PyTorchDigitRecognizer: 学習済みモデル
     """
-    if not os.path.exists(DirectoryConfig.MODEL_PATH):
-        raise FileNotFoundError(f"モデルファイルが見つかりません: {DirectoryConfig.MODEL_PATH}")
+    model_path = "pytorch_digit_model.pth"
     
-    print("既存のモデルを読み込み中...")
-    with open(DirectoryConfig.MODEL_PATH, 'rb') as f:
-        model = pickle.load(f)
-    print("モデル読み込み完了")
-    return model
+    if not os.path.exists(model_path):
+        print("PyTorchモデルが見つかりません。MNISTデータセットで訓練を開始します...")
+        recognizer = PyTorchDigitRecognizer()
+        
+        # MNISTデータセットで訓練
+        from pytorch_model import create_mnist_dataset
+        train_data, val_data = create_mnist_dataset()
+        recognizer.train_model(train_data, val_data, epochs=20)
+        
+        # モデル保存
+        recognizer.save_model(model_path)
+    else:
+        print("PyTorchモデルを読み込み中...")
+        recognizer = PyTorchDigitRecognizer(model_path)
+    
+    print("PyTorchモデル読み込み完了")
+    return recognizer
 
-def predict_digit(image_path, model):
-    """画像ファイルから数字を予測"""
-    img = safe_imread_gray(image_path)
-    if img is None:
-        return "?"
-
+def predict_digit_with_pytorch(image_path, recognizer):
+    """PyTorchモデルで画像ファイルから数字を予測（多数決方式）"""
+    if not os.path.exists(image_path):
+        return "?", 0.0, [], []
+    
     # 保存フォルダ（元画像と同じディレクトリ）
     save_dir = os.path.dirname(image_path)
-
-    # 01: 元画像保存
-    safe_imwrite(os.path.join(save_dir, "step_01_original.png"), img)
-
-    # 反転の自動判定（背景が白なら反転）
-    if np.mean(img) > 127:
-        img = 255 - img
-    safe_imwrite(os.path.join(save_dir, "step_02_inverted.png"), img)
-
-    img = img.astype("float32") / 255.0  # 正規化（0〜1）
-
-    # 画像サイズを正方形に調整（必要なら）
-    h, w = img.shape
-    size = max(h, w)
-    square_img = np.zeros((size, size), dtype=np.float32)
-    x_offset = (size - w) // 2
-    y_offset = (size - h) // 2
-    square_img[y_offset:y_offset + h, x_offset:x_offset + w] = img
-    safe_imwrite(os.path.join(save_dir, "step_03_square.png"), (square_img * 255).astype(np.uint8))
-
-    # 中心化（重心で移動）
-    moments = cv2.moments((square_img * 255).astype(np.uint8))
-    if moments["m00"] != 0:
-        cx = int(moments["m10"] / moments["m00"])
-        cy = int(moments["m01"] / moments["m00"])
-    else:
-        cx, cy = size // 2, size // 2
-    shift_x = (size // 2) - cx
-    shift_y = (size // 2) - cy
-    M = np.float32([[1, 0, shift_x], [0, 1, shift_y]])
-    centered = cv2.warpAffine(square_img, M, (size, size))
-    safe_imwrite(os.path.join(save_dir, "step_04_centered.png"), (centered * 255).astype(np.uint8))
-
-    # リサイズ to 28x28
-    resized = cv2.resize(centered, (28, 28), interpolation=cv2.INTER_AREA)
-    safe_imwrite(os.path.join(save_dir, "step_05_resized.png"), (resized * 255).astype(np.uint8))
-
-    # 推論用形状に変換（784次元の1次元配列）
-    input_img = resized.flatten()
-
-    # 予測
-    digit = model.predict([input_img])[0]
-    return str(digit)
+    
+    # デバッグ用：元画像保存
+    if DebugConfig.SAVE_ORIGINAL:
+        img = safe_imread_gray(image_path)
+        if img is not None:
+            safe_imwrite(os.path.join(save_dir, "pytorch_01_original.png"), img)
+    
+    # PyTorchモデルで予測（多数決方式）
+    digit, confidence, predictions, confidences = recognizer.predict_digit(image_path)
+    
+    # デバッグ情報を保存
+    if DebugConfig.ENABLE_DEBUG_OUTPUT:
+        debug_info = {
+            'predictions': predictions,
+            'confidences': confidences,
+            'final_digit': digit,
+            'final_confidence': confidence
+        }
+        
+        # デバッグ情報をテキストファイルに保存
+        debug_file = os.path.join(save_dir, f"pytorch_debug_{os.path.basename(image_path)}.txt")
+        with open(debug_file, 'w', encoding='utf-8') as f:
+            f.write(f"予測結果: {digit}\n")
+            f.write(f"信頼度: {confidence:.4f}\n")
+            f.write(f"個別予測: {predictions}\n")
+            f.write(f"個別信頼度: {[f'{c:.4f}' for c in confidences]}\n")
+    
+    return digit, confidence, predictions, confidences
 
 def main():
-    """数字認識とCSV出力のメイン関数"""
-    # モデルのセットアップ
-    model = setup_model()
+    """PyTorch数字認識とCSV出力のメイン関数"""
+    print("=== PyTorch数字認識システム開始 ===")
+    
+    # PyTorchモデルのセットアップ
+    recognizer = setup_pytorch_model()
     
     # CSV出力（UTF-8 BOM付きで日本語対応）
-    with open(DirectoryConfig.OUTPUT_CSV, "w", newline="", encoding="utf-8-sig") as f:
+    output_file = "result_pytorch.csv"
+    with open(output_file, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
-        writer.writerow(["ファイル名", "認識結果"])
+        writer.writerow(["ファイル名", "認識結果", "信頼度", "個別予測", "個別信頼度"])
 
         processed_count = 0
+        total_confidence = 0.0
+        
         for folder_name in os.listdir(DirectoryConfig.DEBUG_DIR):
             folder_path = os.path.join(DirectoryConfig.DEBUG_DIR, folder_name)
             if not os.path.isdir(folder_path):
                 continue
 
             digits = []
+            confidences = []
+            all_predictions = []
+            all_individual_confidences = []
+            
             for i in range(8):
                 digit_path = os.path.join(folder_path, f"{folder_name}_digit_{i}.png")
-                digits.append(predict_digit(digit_path, model))
+                digit, confidence, predictions, individual_confidences = predict_digit_with_pytorch(digit_path, recognizer)
+                
+                digits.append(digit)
+                confidences.append(confidence)
+                all_predictions.append(predictions)
+                all_individual_confidences.append(individual_confidences)
 
             result = "".join(digits)
-            writer.writerow([folder_name, result])
-            print(f"{folder_name}: {result}")
+            avg_confidence = np.mean(confidences)
+            total_confidence += avg_confidence
+            
+            # 個別予測と信頼度を文字列として保存
+            predictions_str = "|".join([str(p) for p in all_predictions])
+            confidences_str = "|".join([str(c) for c in all_individual_confidences])
+            
+            writer.writerow([folder_name, result, f"{avg_confidence:.4f}", predictions_str, confidences_str])
+            print(f"{folder_name}: {result} (信頼度: {avg_confidence:.4f})")
             processed_count += 1
         
-        print(f"数字認識完了: {processed_count}個の画像を処理しました")
+        avg_total_confidence = total_confidence / processed_count if processed_count > 0 else 0.0
+        print(f"\nPyTorch数字認識完了: {processed_count}個の画像を処理しました")
+        print(f"平均信頼度: {avg_total_confidence:.4f}")
+        print(f"結果は {output_file} に保存されました")
 
 if __name__ == "__main__":
     main()

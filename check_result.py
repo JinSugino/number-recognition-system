@@ -27,6 +27,8 @@ def compare_results(result_accurate_path, result_path, output_path):
     detailed_rows = []
     total_chars = 0
     total_matches = 0
+    perfect_matches = 0  # 8文字全て正解の画像数
+    total_images = 0     # 総画像数
 
     for key in all_keys:
         a = accurate_map.get(key)
@@ -41,8 +43,14 @@ def compare_results(result_accurate_path, result_path, output_path):
         detailed_rows.append([key, a, b, m])
         total_chars += len(a)
         total_matches += m
+        
+        # 8文字全て正解かチェック
+        if m == 8:
+            perfect_matches += 1
+        total_images += 1
 
     overall_match_rate = (total_matches / total_chars) if total_chars > 0 else 0.0
+    perfect_accuracy = (perfect_matches / total_images) if total_images > 0 else 0.0
 
     with open(output_path, 'w', newline='', encoding='utf-8-sig') as fout:
         writer = csv.writer(fout)
@@ -50,68 +58,65 @@ def compare_results(result_accurate_path, result_path, output_path):
         writer.writerows(detailed_rows)
         writer.writerow([])
         writer.writerow(['overall_match_rate', overall_match_rate])
-        print(f"overall_match_rate: {overall_match_rate}")
+        writer.writerow(['perfect_accuracy', perfect_accuracy])
+    
+    print(f"overall_match_rate: {overall_match_rate:.4f} ({overall_match_rate*100:.1f}%)")
+    print(f"8率（全文字正解率）: {perfect_accuracy:.4f} ({perfect_accuracy*100:.1f}%) - {perfect_matches}/{total_images}枚")
 
-def compare_models(result_accurate_path, sklearn_path, pytorch_path, output_path):
-    """両モデルの精度を比較"""
+def compare_pytorch_only(result_accurate_path, pytorch_path, output_path):
+    """PyTorchモデルの精度を詳細比較"""
     accurate_map = read_csv_map(result_accurate_path)
-    sklearn_map = read_csv_map(sklearn_path)
     pytorch_map = read_csv_map(pytorch_path)
     
-    all_keys = list(OrderedDict.fromkeys(list(accurate_map.keys()) + list(sklearn_map.keys()) + list(pytorch_map.keys())))
+    all_keys = list(OrderedDict.fromkeys(list(accurate_map.keys()) + list(pytorch_map.keys())))
     
     detailed_rows = []
-    sklearn_total_chars = 0
-    sklearn_total_matches = 0
     pytorch_total_chars = 0
     pytorch_total_matches = 0
+    perfect_matches = 0  # 8文字全て正解の画像数
+    total_images = 0     # 総画像数
     
     for key in all_keys:
         accurate = accurate_map.get(key)
-        sklearn = sklearn_map.get(key)
         pytorch = pytorch_map.get(key)
         
         if accurate is None:
             continue
             
-        sklearn_matches = count_matching_chars(accurate, sklearn) if sklearn else 0
         pytorch_matches = count_matching_chars(accurate, pytorch) if pytorch else 0
         
-        detailed_rows.append([key, accurate, sklearn or "<missing>", pytorch or "<missing>", sklearn_matches, pytorch_matches])
+        # 8文字全て正解かチェック
+        if pytorch_matches == 8:
+            perfect_matches += 1
+        total_images += 1
         
-        sklearn_total_chars += len(accurate)
-        sklearn_total_matches += sklearn_matches
+        detailed_rows.append([key, accurate, pytorch or "<missing>", pytorch_matches])
+        
         pytorch_total_chars += len(accurate)
         pytorch_total_matches += pytorch_matches
     
-    sklearn_accuracy = (sklearn_total_matches / sklearn_total_chars) if sklearn_total_chars > 0 else 0.0
     pytorch_accuracy = (pytorch_total_matches / pytorch_total_chars) if pytorch_total_chars > 0 else 0.0
+    perfect_accuracy = (perfect_matches / total_images) if total_images > 0 else 0.0
     
     with open(output_path, 'w', newline='', encoding='utf-8-sig') as fout:
         writer = csv.writer(fout)
-        writer.writerow(['filename', 'accurate', 'sklearn_result', 'pytorch_result', 'sklearn_matches', 'pytorch_matches'])
+        writer.writerow(['filename', 'accurate', 'pytorch_result', 'pytorch_matches'])
         writer.writerows(detailed_rows)
         writer.writerow([])
-        writer.writerow(['sklearn_accuracy', sklearn_accuracy])
         writer.writerow(['pytorch_accuracy', pytorch_accuracy])
-        writer.writerow(['improvement', pytorch_accuracy - sklearn_accuracy])
+        writer.writerow(['perfect_accuracy', perfect_accuracy])
     
-    print(f"scikit-learn精度: {sklearn_accuracy:.4f} ({sklearn_accuracy*100:.1f}%)")
     print(f"PyTorch精度: {pytorch_accuracy:.4f} ({pytorch_accuracy*100:.1f}%)")
-    print(f"改善幅: {pytorch_accuracy - sklearn_accuracy:.4f} ({(pytorch_accuracy - sklearn_accuracy)*100:.1f}%)")
+    print(f"8率（全文字正解率）: {perfect_accuracy:.4f} ({perfect_accuracy*100:.1f}%) - {perfect_matches}/{total_images}枚")
 
 if __name__ == '__main__':
     import sys
     
-    if len(sys.argv) > 1 and sys.argv[1] == 'pytorch':
-        # PyTorchモデルの結果を比較
+    if len(sys.argv) > 1 and sys.argv[1] == 'compare':
+        # PyTorchモデルの詳細比較
+        print("=== PyTorchモデルの精度確認 ===")
+        compare_pytorch_only('result_accurate.csv', 'result_pytorch.csv', 'model_comparison_detailed.csv')
+    else:
+        # デフォルト：PyTorchモデルの結果を比較
         print("=== PyTorchモデルの精度確認 ===")
         compare_results('result_accurate.csv', 'result_pytorch.csv', 'compare_output_pytorch.csv')
-    elif len(sys.argv) > 1 and sys.argv[1] == 'compare':
-        # 両モデルの比較
-        print("=== 両モデルの精度比較 ===")
-        compare_models('result_accurate.csv', 'result.csv', 'result_pytorch.csv', 'model_comparison_detailed.csv')
-    else:
-        # 従来のscikit-learnモデルの結果を比較
-        print("=== scikit-learnモデルの精度確認 ===")
-        compare_results('result_accurate.csv', 'result.csv', 'compare_output.csv')

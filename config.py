@@ -14,8 +14,7 @@ class DirectoryConfig:
     INPUT_DIR = "input"          # 元の入力画像を置くフォルダ（処理の起点）
     DATA_DIR = "data"            # 枠削りなど前処理後の画像を書き出すフォルダ（中間成果物）
     DEBUG_DIR = "debug"          # 分割結果や各ステップのデバッグ画像を書き出すフォルダ
-    OUTPUT_CSV = "result.csv"    # 認識結果を保存するCSV（プロジェクト直下に出力）
-    MODEL_PATH = "sklearn_mnist_model.pkl"  # 推論に使う学習済みモデルのファイルパス
+    OUTPUT_CSV = "result_pytorch.csv"    # 認識結果を保存するCSV（プロジェクト直下に出力）
 
 # =============================================================================
 # 画像前処理設定
@@ -59,13 +58,13 @@ class DigitSegmentationConfig:
     PROJECTION_THRESHOLD2 = 20 #数字らしい特徴として明確な濃度ピークが存在するかを判定する閾値（0~60）
 
 # =============================================================================
-# モデル設定
+# PyTorchモデル設定
 # =============================================================================
-class ModelConfig:
-    """モデル関連の設定"""
+class PyTorchModelConfig:
+    """PyTorchモデル関連の設定"""
     
     # モデルファイルパス
-    MODEL_PATH = "sklearn_mnist_model.pkl"  # 学習時と互換のライブラリ版で保存されたモデル
+    MODEL_PATH = "pytorch_digit_model.pth"  # PyTorch学習済みモデル
 
 # =============================================================================
 # 数字認識設定
@@ -94,16 +93,16 @@ class DigitRecognitionConfig:
 class DebugConfig:
     """デバッグとログの設定"""
     
-    ENABLE_DEBUG_OUTPUT = True    # デバッグ出力の大元スイッチ（画像保存や詳細ログを制御）
-    SAVE_INTERMEDIATE_STEPS = True  # 各段階の中間画像を保存（原因調査・精度検証向け）
-    VERBOSE_LOGGING = True        # 進捗や詳細情報をコンソールに出力
+    ENABLE_DEBUG_OUTPUT = False   # デバッグ出力の大元スイッチ（画像保存や詳細ログを制御）
+    SAVE_INTERMEDIATE_STEPS = False  # 各段階の中間画像を保存（原因調査・精度検証向け）
+    VERBOSE_LOGGING = False       # 進捗や詳細情報をコンソールに出力
     
     # デバッグ画像の保存設定
-    SAVE_ORIGINAL = True          # 元画像（分割前）を保存
-    SAVE_INVERTED = True          # 反転後の画像（背景白→黒）を保存
-    SAVE_SQUARE = True            # 正方形キャンバスへ整形後を保存
-    SAVE_CENTERED = True          # 重心合わせ（中心化）後を保存
-    SAVE_RESIZED = True           # 最終リサイズ（28×28）後を保存
+    SAVE_ORIGINAL = False         # 元画像（分割前）を保存
+    SAVE_INVERTED = False         # 反転後の画像（背景白→黒）を保存
+    SAVE_SQUARE = False           # 正方形キャンバスへ整形後を保存
+    SAVE_CENTERED = False         # 重心合わせ（中心化）後を保存
+    SAVE_RESIZED = False          # 最終リサイズ（28×28）後を保存
 
 # =============================================================================
 # パフォーマンス設定

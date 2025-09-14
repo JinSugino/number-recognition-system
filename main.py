@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-数字認識システム - メインハブ
-画像の前処理、二値化・分割、数字認識を順次実行
+数字認識システム - PyTorch版メインハブ
+====================================
+
+画像の前処理、二値化・分割、PyTorch数字認識を順次実行
+多数決方式による精度向上を実装
 """
 import sys
 
@@ -25,7 +28,7 @@ import number_reader
 
 def main():
     """メイン処理：各モジュールを順次実行"""
-    print("=== 数字認識システム開始 ===")
+    print("=== PyTorch数字認識システム開始 ===")
     
     # 1. 画像の前処理（枠削り）
     processed_count = process_images()
@@ -38,12 +41,12 @@ def main():
     print("\n=== ステップ2: 画像の二値化と分割 ===")
     preprocessing.main()
     
-    # 3. 数字認識とCSV出力
-    print("\n=== ステップ3: 数字認識とCSV出力 ===")
+    # 3. PyTorch数字認識とCSV出力
+    print("\n=== ステップ3: PyTorch数字認識とCSV出力 ===")
     number_reader.main()
     
     print(f"\n=== 処理完了 ===")
-    print(f"結果は result.csv に保存されました")
+    print(f"認識結果は result_pytorch.csv に保存されました")
 
 if __name__ == "__main__":
     main()
